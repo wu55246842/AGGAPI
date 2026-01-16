@@ -1,0 +1,60 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model ApiKey {
+  id                 String   @id @default(uuid())
+  prefix             String
+  hash               String
+  tenantId           String
+  projectId          String
+  rateLimitPerMinute Int      @default(60)
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  usageEvents        UsageEvent[]
+
+  @@index([prefix])
+}
+
+model UsageEvent {
+  id           String   @id @default(uuid())
+  createdAt    DateTime @default(now())
+  requestId    String
+  apiKeyId     String
+  tenantId     String
+  projectId    String
+  provider     String
+  model        String
+  inputTokens  Int
+  outputTokens Int
+  totalTokens  Int
+  costUsd      Float
+
+  apiKey ApiKey @relation(fields: [apiKeyId], references: [id])
+
+  @@index([tenantId, projectId, createdAt])
+}
+
+model JobRecord {
+  id         String   @id @default(uuid())
+  status     String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  request    Json
+  response   Json?
+  error      Json?
+}
+
+model RequestAudit {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  requestId String
+  provider  String
+  model     String
+  costUsd   Float
+}

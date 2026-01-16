@@ -1,6 +1,7 @@
 export type UnifiedMessagePart =
   | { type: 'text'; text: string }
-  | { type: 'image_url'; image_url: { url: string } };
+  | { type: 'image_url'; image_url: { url: string } }
+  | { type: 'input_audio'; input_audio: { data: string; format?: string } };
 
 export type UnifiedMessage = {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -39,6 +40,7 @@ export type RoutingConstraints = {
     strategy?: 'cost' | 'latency' | 'reliability' | 'quality';
     allow_providers?: string[];
     deny_providers?: string[];
+    max_fallbacks?: number;
   };
   region?: {
     data_residency?: string;

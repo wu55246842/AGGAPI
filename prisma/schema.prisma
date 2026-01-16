@@ -34,6 +34,8 @@ model UsageEvent {
   outputTokens Int
   totalTokens  Int
   costUsd      Float
+  modelVariantId String?
+  metricJson   Json?
 
   apiKey ApiKey @relation(fields: [apiKeyId], references: [id])
 
@@ -57,4 +59,35 @@ model RequestAudit {
   provider  String
   model     String
   costUsd   Float
+}
+
+model PublicModel {
+  id               String         @id @default(uuid())
+  publicName       String         @unique
+  description      String?
+  enabled          Boolean        @default(true)
+  capabilitiesJson Json
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  variants         ModelVariant[]
+
+  @@map("public_models")
+}
+
+model ModelVariant {
+  id                   String       @id @default(uuid())
+  publicModelId         String
+  provider              String
+  providerModel         String
+  enabled               Boolean      @default(true)
+  priceJson             Json
+  regionsJson           Json
+  routingJson           Json
+  capabilitiesOverride  Json?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  publicModel           PublicModel  @relation(fields: [publicModelId], references: [id])
+
+  @@unique([publicModelId, provider, providerModel])
+  @@map("model_variants")
 }

@@ -8,6 +8,7 @@ export type AuthContext = {
   tenantId: string;
   projectId: string;
   rateLimitPerMinute: number;
+  apiKeyPrefix: string;
 };
 
 @Injectable()
@@ -22,6 +23,7 @@ export class AuthGuard implements CanActivate {
         tenantId: 'tenant_mock',
         projectId: 'project_mock',
         rateLimitPerMinute: 60,
+        apiKeyPrefix: 'mock',
       };
       return true;
     }
@@ -44,6 +46,7 @@ export class AuthGuard implements CanActivate {
       tenantId: keyRecord.tenantId,
       projectId: keyRecord.projectId,
       rateLimitPerMinute: keyRecord.rateLimitPerMinute,
+      apiKeyPrefix: prefix,
     };
     return true;
   }

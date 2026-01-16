@@ -1,19 +1,14 @@
 import { Controller, Get } from '@nestjs/common';
-import { MODEL_CATALOG } from './catalog';
+import { ModelsService } from './models.service';
 
 @Controller('v1/models')
 export class ModelsController {
+  constructor(private readonly models: ModelsService) {}
+
   @Get()
-  listModels() {
+  async listModels() {
     return {
-      data: MODEL_CATALOG.map((model) => ({
-        id: model.id,
-        public_name: model.publicName,
-        modality: model.modality,
-        capabilities: model.capabilities,
-        pricing: model.pricing,
-        regions: model.regions,
-      })),
+      data: await this.models.listPublicModels(false),
     };
   }
 }

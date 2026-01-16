@@ -3,17 +3,20 @@ import { RouterService } from '../../core/router/router.service';
 import { ProviderRegistry } from '../../providers/provider.registry';
 import { UnifiedRequest, UnifiedResponse, SSEEvent } from '../../core/unified-schema/types';
 import { PrismaService } from '../../common/prisma.service';
-import { MODEL_CATALOG } from '../models/catalog';
-import { calculateCostUsd } from '../usage/billing';
+import { CostCalculator } from '../usage/billing';
+import { HealthService } from '../../core/router/health.service';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 @Injectable()
 export class ResponsesService {
+  private readonly costCalculator = new CostCalculator();
+
   constructor(
     private readonly router: RouterService,
     private readonly providers: ProviderRegistry,
     private readonly prisma: PrismaService,
+    private readonly health: HealthService,
   ) {}
 
 
@@ -22,7 +25,9 @@ export class ResponsesService {
     request: UnifiedRequest,
     providerName: string,
     usage: { input_tokens: number; output_tokens: number; total_tokens: number; cost_usd: number },
-    auth: { apiKeyId: string; tenantId: string; projectId: string },
+    priceDetails: { version: string; unit_prices: { input_per_1k: number; output_per_1k: number }; breakdown: Record<string, unknown> },
+    modelVariantId: string,
+    auth: { apiKeyId: string; tenantId: string; projectId: string; apiKeyPrefix: string },
   ) {
     await this.prisma.usageEvent.create({
       data: {
@@ -36,6 +41,12 @@ export class ResponsesService {
         outputTokens: usage.output_tokens,
         totalTokens: usage.total_tokens,
         costUsd: usage.cost_usd,
+        modelVariantId,
+        metricJson: {
+          price_version: priceDetails.version,
+          unit_prices: priceDetails.unit_prices,
+          breakdown: priceDetails.breakdown,
+        },
       },
     });
 
@@ -49,53 +60,51 @@ export class ResponsesService {
     });
   }
 
-  private ensureCapabilities(request: UnifiedRequest, provider: string) {
-    const entry = MODEL_CATALOG.find((model) => model.publicName === request.model && model.provider === provider);
-    if (!entry) {
-      throw new HttpException({ code: 'BAD_REQUEST', message: 'Model not found' }, HttpStatus.BAD_REQUEST);
-    }
-    if (request.generation?.tools?.length && !entry.capabilities.tools) {
-      throw new HttpException(
-        { code: 'CAPABILITY_UNSUPPORTED', message: 'Tools not supported by provider' },
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-    if (request.generation?.response_format?.type === 'json_schema' && !entry.capabilities.json_schema) {
-      throw new HttpException(
-        { code: 'CAPABILITY_UNSUPPORTED', message: 'JSON schema not supported by provider' },
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-  }
-
   async generate(
     request: UnifiedRequest,
     requestId: string,
-    auth: { apiKeyId: string; tenantId: string; projectId: string },
+    auth: { apiKeyId: string; tenantId: string; projectId: string; apiKeyPrefix: string },
   ): Promise<UnifiedResponse> {
-    const decision = this.router.route(request);
-    const candidates = [
-      { provider: decision.provider, model: decision.providerModel },
-      ...decision.fallback.map((fallback) => ({ provider: fallback.provider, model: fallback.providerModel })),
-    ];
+    const tags = Array.isArray(request.metadata?.tags) ? (request.metadata?.tags as string[]) : undefined;
+    const decision = await this.router.route(request, {
+      tenantId: auth.tenantId,
+      projectId: auth.projectId,
+      apiKeyPrefix: auth.apiKeyPrefix,
+      tags,
+    });
+    const candidates = [decision.primary, ...decision.fallback];
 
     let lastError: (Error & { status?: number }) | null = null;
     let lastProvider: { name: string; model: string } | null = null;
     for (const candidate of candidates) {
+      const start = Date.now();
       try {
-        this.ensureCapabilities(request, candidate.provider);
         const provider = this.providers.get(candidate.provider);
-        const result = await provider.generate(request, requestId, candidate.model);
-        const modelEntry = MODEL_CATALOG.find((model) => model.publicName === request.model && model.provider === candidate.provider);
-        const cost = calculateCostUsd(modelEntry, result.usage.input_tokens, result.usage.output_tokens);
-        result.usage.cost_usd = cost;
+        const result = await provider.generate(request, requestId, candidate.providerModel);
+        const latencyMs = Date.now() - start;
+        await this.health.recordSuccess(candidate.variantId, latencyMs);
+        const cost = this.costCalculator.calculate(
+          candidate.price,
+          result.usage.input_tokens,
+          result.usage.output_tokens,
+        );
+        result.usage.cost_usd = cost.cost_usd;
         result.response.usage = result.usage;
-        result.response.provider = { name: candidate.provider, model: candidate.model };
-        await this.recordUsage(requestId, request, candidate.provider, result.usage, auth);
+        result.response.provider = { name: candidate.provider, model: candidate.providerModel, region: candidate.region };
+        await this.recordUsage(
+          requestId,
+          request,
+          candidate.provider,
+          result.usage,
+          { version: candidate.price.version, unit_prices: candidate.price.unit_prices, breakdown: cost.breakdown },
+          candidate.variantId,
+          auth,
+        );
         return result.response;
       } catch (error) {
         lastError = error as Error & { status?: number };
-        lastProvider = { name: candidate.provider, model: candidate.model };
+        lastProvider = { name: candidate.provider, model: candidate.providerModel };
+        await this.health.recordFailure(candidate.variantId, Date.now() - start);
         const status = (error as { status?: number }).status;
         if (error instanceof HttpException) {
           const responseBody = error.getResponse() as { code?: string };
@@ -139,21 +148,24 @@ export class ResponsesService {
   async *stream(
     request: UnifiedRequest,
     requestId: string,
-    auth: { apiKeyId: string; tenantId: string; projectId: string },
+    auth: { apiKeyId: string; tenantId: string; projectId: string; apiKeyPrefix: string },
   ): AsyncGenerator<SSEEvent, UnifiedResponse, void> {
-    const decision = this.router.route(request);
-    const candidates = [
-      { provider: decision.provider, model: decision.providerModel },
-      ...decision.fallback.map((fallback) => ({ provider: fallback.provider, model: fallback.providerModel })),
-    ];
+    const tags = Array.isArray(request.metadata?.tags) ? (request.metadata?.tags as string[]) : undefined;
+    const decision = await this.router.route(request, {
+      tenantId: auth.tenantId,
+      projectId: auth.projectId,
+      apiKeyPrefix: auth.apiKeyPrefix,
+      tags,
+    });
+    const candidates = [decision.primary, ...decision.fallback];
 
     let lastError: (Error & { status?: number }) | null = null;
     let lastProvider: { name: string; model: string } | null = null;
     for (const candidate of candidates) {
+      const start = Date.now();
       try {
-        this.ensureCapabilities(request, candidate.provider);
         const provider = this.providers.get(candidate.provider);
-        const stream = provider.stream(request, requestId, candidate.model);
+        const stream = provider.stream(request, requestId, candidate.providerModel);
         let finalResult: UnifiedResponse | null = null;
         for await (const event of stream) {
           if (event.type === 'response.completed') {
@@ -164,17 +176,27 @@ export class ResponsesService {
         if (!finalResult) {
           throw new Error('Stream completed without response');
         }
+        const latencyMs = Date.now() - start;
+        await this.health.recordSuccess(candidate.variantId, latencyMs);
         const usage = finalResult.usage ?? { input_tokens: 0, output_tokens: 0, total_tokens: 0, cost_usd: 0 };
-        const modelEntry = MODEL_CATALOG.find((model) => model.publicName === request.model && model.provider === candidate.provider);
-        const cost = calculateCostUsd(modelEntry, usage.input_tokens, usage.output_tokens);
-        usage.cost_usd = cost;
+        const cost = this.costCalculator.calculate(candidate.price, usage.input_tokens, usage.output_tokens);
+        usage.cost_usd = cost.cost_usd;
         finalResult.usage = usage;
-        finalResult.provider = { name: candidate.provider, model: candidate.model };
-        await this.recordUsage(requestId, request, candidate.provider, usage, auth);
+        finalResult.provider = { name: candidate.provider, model: candidate.providerModel, region: candidate.region };
+        await this.recordUsage(
+          requestId,
+          request,
+          candidate.provider,
+          usage,
+          { version: candidate.price.version, unit_prices: candidate.price.unit_prices, breakdown: cost.breakdown },
+          candidate.variantId,
+          auth,
+        );
         return finalResult;
       } catch (error) {
         lastError = error as Error & { status?: number };
-        lastProvider = { name: candidate.provider, model: candidate.model };
+        lastProvider = { name: candidate.provider, model: candidate.providerModel };
+        await this.health.recordFailure(candidate.variantId, Date.now() - start);
         const status = (error as { status?: number }).status;
         if (error instanceof HttpException) {
           const responseBody = error.getResponse() as { code?: string };

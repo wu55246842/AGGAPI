@@ -7,9 +7,12 @@ import { JobsController } from './modules/jobs/jobs.controller';
 import { JobsService } from './modules/jobs/jobs.service';
 import { JobsProcessor } from './modules/jobs/jobs.processor';
 import { ModelsController } from './modules/models/models.controller';
+import { ModelsService } from './modules/models/models.service';
+import { AdminController } from './modules/admin/admin.controller';
 import { UsageController } from './modules/usage/usage.controller';
 import { UsageService } from './modules/usage/usage.service';
 import { RouterService } from './core/router/router.service';
+import { HealthService } from './core/router/health.service';
 import { ProviderRegistry } from './providers/provider.registry';
 import { PrismaService } from './common/prisma.service';
 import { RequestIdMiddleware } from './common/request-id.middleware';
@@ -25,13 +28,15 @@ import { JsonLogger } from './common/logger';
     }),
     BullModule.registerQueue({ name: 'jobs' }),
   ],
-  controllers: [ResponsesController, JobsController, ModelsController, UsageController],
+  controllers: [ResponsesController, JobsController, ModelsController, UsageController, AdminController],
   providers: [
     ResponsesService,
     JobsService,
     JobsProcessor,
     UsageService,
     RouterService,
+    ModelsService,
+    HealthService,
     ProviderRegistry,
     PrismaService,
     JsonLogger,

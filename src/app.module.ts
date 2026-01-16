@@ -13,6 +13,8 @@ import { UsageController } from './modules/usage/usage.controller';
 import { UsageService } from './modules/usage/usage.service';
 import { RouterService } from './core/router/router.service';
 import { HealthService } from './core/router/health.service';
+import { ModelsCatalogService } from './core/catalog/models-catalog.service';
+import { ModelsHealthService } from './core/health/models-health.service';
 import { ProviderRegistry } from './providers/provider.registry';
 import { PrismaService } from './common/prisma.service';
 import { RequestIdMiddleware } from './common/request-id.middleware';
@@ -37,6 +39,8 @@ import { JsonLogger } from './common/logger';
     RouterService,
     ModelsService,
     HealthService,
+    ModelsCatalogService,
+    ModelsHealthService,
     ProviderRegistry,
     PrismaService,
     JsonLogger,

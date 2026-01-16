@@ -274,22 +274,138 @@ components:
         error:
           $ref: '#/components/schemas/ErrorResponse'
 
-    ModelInfo:
+    ModelAggregatesResponse:
       type: object
-      required: [id, public_name, modality, capabilities]
+      required: [data, meta]
       properties:
-        id: { type: string }
-        public_name: { type: string }
-        modality: { type: string, enum: [text, image, video, audio, embedding] }
-        capabilities:
-          type: object
-          additionalProperties: true
-        pricing:
-          type: object
-          additionalProperties: true
-        regions:
+        data:
           type: array
-          items: { type: string }
+          items:
+            type: object
+            required: [public_model, variants, recommended_default]
+            properties:
+              public_model:
+                type: object
+                required: [id, public_name, modality, capabilities, lifecycle]
+                properties:
+                  id: { type: string }
+                  public_name: { type: string }
+                  modality:
+                    type: array
+                    items: { type: string }
+                  capabilities:
+                    type: object
+                    additionalProperties: true
+                  lifecycle:
+                    type: object
+                    required: [status, enabled, deprecation]
+                    properties:
+                      status: { type: string, enum: [ga, beta, deprecated] }
+                      enabled: { type: boolean }
+                      deprecation:
+                        type: object
+                        required: [date, replacement]
+                        properties:
+                          date: { type: string, nullable: true }
+                          replacement: { type: string, nullable: true }
+                  tags:
+                    type: array
+                    items: { type: string }
+              variants:
+                type: array
+                items:
+                  type: object
+                  required: [id, provider, provider_model, regions, effective_supports, pricing_summary, enabled, rollout, routing, health, last_updated]
+                  properties:
+                    id: { type: string }
+                    provider:
+                      type: object
+                      required: [name]
+                      properties:
+                        name: { type: string }
+                    provider_model: { type: string }
+                    regions:
+                      type: object
+                      required: [available_regions, data_residency]
+                      properties:
+                        available_regions:
+                          type: array
+                          items: { type: string }
+                        data_residency:
+                          type: object
+                          additionalProperties:
+                            type: object
+                            required: [in_region_processing, cross_region_fallback]
+                            properties:
+                              in_region_processing: { type: boolean }
+                              cross_region_fallback: { type: boolean }
+                    effective_supports:
+                      type: object
+                      required: [streaming, tools, json_schema, vision, audio_in, audio_out]
+                      properties:
+                        streaming: { type: boolean }
+                        tools: { type: boolean }
+                        json_schema: { type: boolean }
+                        vision: { type: boolean }
+                        audio_in: { type: boolean }
+                        audio_out: { type: boolean }
+                    pricing_summary:
+                      type: object
+                      required: [currency, billing_model, version, unit_prices]
+                      properties:
+                        currency: { type: string }
+                        billing_model: { type: string }
+                        version: { type: string }
+                        unit_prices:
+                          type: object
+                          required: [input_per_1k, output_per_1k]
+                          properties:
+                            input_per_1k: { type: number }
+                            output_per_1k: { type: number }
+                    enabled: { type: boolean }
+                    rollout:
+                      type: object
+                      required: [type, percentage, sticky_key]
+                      properties:
+                        type: { type: string }
+                        percentage: { type: number }
+                        sticky_key: { type: string }
+                    routing:
+                      type: object
+                      required: [weights]
+                      properties:
+                        weights:
+                          type: object
+                          required: [base_weight, quality_weight, cost_weight, latency_weight]
+                          properties:
+                            base_weight: { type: number }
+                            quality_weight: { type: number }
+                            cost_weight: { type: number }
+                            latency_weight: { type: number }
+                    health:
+                      type: object
+                      required: [status, score, error_rate, p95_latency_ms, cooldown_until]
+                      properties:
+                        status: { type: string, enum: [healthy, degraded, down, unknown] }
+                        score: { type: number }
+                        error_rate: { type: number }
+                        p95_latency_ms: { type: number }
+                        cooldown_until: { type: string, nullable: true }
+                    last_updated: { type: string, format: date-time }
+              recommended_default:
+                type: object
+                required: [variant_id, provider, region, reason]
+                properties:
+                  variant_id: { type: string, nullable: true }
+                  provider: { type: string, nullable: true }
+                  region: { type: string, nullable: true }
+                  reason: { type: string }
+        meta:
+          type: object
+          required: [generated_at, default_routing_strategy]
+          properties:
+            generated_at: { type: string, format: date-time }
+            default_routing_strategy: { type: string }
 
 paths:
   /v1/responses:
@@ -412,11 +528,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items: { $ref: '#/components/schemas/ModelInfo' }
+                $ref: '#/components/schemas/ModelAggregatesResponse'
 
   /v1/usage:
     get:

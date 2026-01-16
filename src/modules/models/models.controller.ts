@@ -7,8 +7,6 @@ export class ModelsController {
 
   @Get()
   async listModels() {
-    return {
-      data: await this.models.listPublicModels(false),
-    };
+    return this.models.listAggregatedModels();
   }
 }

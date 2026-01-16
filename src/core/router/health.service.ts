@@ -23,6 +23,14 @@ export class HealthService {
     return `health:${variantId}:${bucket}`;
   }
 
+  async getCooldownUntil(variantId: string): Promise<string | null> {
+    const ttlSeconds = await this.redis.ttl(`health:cb:${variantId}`);
+    if (!ttlSeconds || ttlSeconds <= 0) {
+      return null;
+    }
+    return new Date(Date.now() + ttlSeconds * 1000).toISOString();
+  }
+
   async recordSuccess(variantId: string, latencyMs: number) {
     await this.record(variantId, latencyMs, false);
   }

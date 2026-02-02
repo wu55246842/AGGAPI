@@ -17,7 +17,7 @@ export class JobsProcessor extends WorkerHost {
       const response = await this.responses.generate(
         job.data.request,
         job.data.requestId,
-        { apiKeyId: 'job', tenantId: 'job', projectId: 'job' },
+        { apiKeyId: 'job', tenantId: 'job', projectId: 'job', apiKeyPrefix: 'job' },
       );
       await this.jobs.updateJobSuccess(job.data.jobId, response);
     } catch (error) {

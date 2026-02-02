@@ -1,4 +1,5 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { RouterService } from '../../core/router/router.service';
 import { ProviderRegistry } from '../../providers/provider.registry';
 import { UnifiedRequest, UnifiedResponse, SSEEvent } from '../../core/unified-schema/types';
@@ -25,7 +26,11 @@ export class ResponsesService {
     request: UnifiedRequest,
     providerName: string,
     usage: { input_tokens: number; output_tokens: number; total_tokens: number; cost_usd: number },
-    priceDetails: { version: string; unit_prices: { input_per_1k: number; output_per_1k: number }; breakdown: Record<string, unknown> },
+    priceDetails: {
+      version: string;
+      unit_prices: { input_per_1k: number; output_per_1k: number };
+      breakdown: Prisma.InputJsonValue;
+    },
     modelVariantId: string,
     auth: { apiKeyId: string; tenantId: string; projectId: string; apiKeyPrefix: string },
   ) {
@@ -96,7 +101,11 @@ export class ResponsesService {
           request,
           candidate.provider,
           result.usage,
-          { version: candidate.price.version, unit_prices: candidate.price.unit_prices, breakdown: cost.breakdown },
+          {
+            version: candidate.price.version,
+            unit_prices: candidate.price.unit_prices,
+            breakdown: cost.breakdown as Prisma.InputJsonValue,
+          },
           candidate.variantId,
           auth,
         );
@@ -188,7 +197,11 @@ export class ResponsesService {
           request,
           candidate.provider,
           usage,
-          { version: candidate.price.version, unit_prices: candidate.price.unit_prices, breakdown: cost.breakdown },
+          {
+            version: candidate.price.version,
+            unit_prices: candidate.price.unit_prices,
+            breakdown: cost.breakdown as Prisma.InputJsonValue,
+          },
           candidate.variantId,
           auth,
         );

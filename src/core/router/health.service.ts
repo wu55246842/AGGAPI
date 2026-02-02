@@ -63,7 +63,7 @@ export class HealthService {
       pipeline.hgetall(key);
       pipeline.lrange(`${key}:latency`, 0, -1);
     }
-    const results = await pipeline.exec();
+    const results = (await pipeline.exec()) ?? [];
 
     let requests = 0;
     let errors = 0;
